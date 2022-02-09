@@ -11,8 +11,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-
     - name: Set up Go
       uses: actions/setup-go@v2
       with:
@@ -21,11 +19,10 @@ jobs:
     - name: setup-docker
       uses: docker-practice/actions-setup-docker@1.0.8
       
-    - name: get fyne
-      run: go install github.com/fyne-io/fyne-cross
+    - uses: actions/checkout@v2
 
     - name: Install deps
       run: go mod download
       
     - name: Cross Compile Windows
-      run: fyne-cross windows -arch=amd64,386
+      run: go run github.com/fyne-io/fyne-cross windows -arch=amd64,386
