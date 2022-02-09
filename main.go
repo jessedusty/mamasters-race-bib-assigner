@@ -1,335 +1,213 @@
 package main
 
 import (
-	"encoding/csv"
+	"bytes"
 	"fmt"
-	"github.com/gocarina/gocsv"
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/widget"
+	nativeDialog "github.com/sqweek/dialog"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
+	"time"
 )
 
-type LoanerBib struct {
-	Slot string `csv:"Slot"`
-	Bib  string `csv:"Bib"`
+func tidyUp() {
+	fmt.Println("Exited")
 }
 
-type RaceEntry struct {
-	NEMSBibNumber    string
-	MIDBibNumber     string
-	USSA             string
-	FIS              string
-	FirstName        string
-	LastName         string
-	YOB              string
-	Gender           string
-	Team             string
-	RegistrationDate string
-	USSAMembership   string
-	NASTAR           string
-	SeasonPass       string
-	ExtraCol         string
+type runOptions struct {
+	LoanerBibFilePath string
+	IsNEMS            bool
+	RaceDayFilePaths  []string
+	OutputDirectory   string
 }
 
-func (e *RaceEntry) HomeBib() string {
-	return cleanBib(e.MIDBibNumber)
-}
+func run(app fyne.App, options runOptions) {
+	NemsMode = options.IsNEMS
 
-func (e *RaceEntry) AwayBib() string {
-	return cleanBib(e.NEMSBibNumber)
-}
-
-func (e *RaceEntry) SetBib(bib string) {
-	e.MIDBibNumber = cleanBib(bib)
-}
-
-func (e *RaceEntry) PersonKey() string {
-	return strings.Trim(e.USSA+e.FirstName+e.LastName+e.YOB, " ")
-}
-
-func (e *RaceEntry) LogName() string {
-	return fmt.Sprintf("%s %s", e.FirstName, e.LastName)
-}
-
-func cleanBib(bib string) string {
-	return strings.TrimSpace(bib)
-}
-
-func (s *BibSolver) loadLoanerBibs() error {
-	loanerBibFile, err := os.Open("Available Loaner bibs - masters updated 1-30-22.csv")
-	if err != nil {
-		return err
-	}
-
-	var loanerBibs []LoanerBib
-
-	err = gocsv.UnmarshalFile(loanerBibFile, &loanerBibs)
-	if err != nil {
-		return err
-	}
-
-	var retVal []string
-	for _, bib := range loanerBibs {
-		retVal = append(retVal, cleanBib(bib.Bib))
-	}
-
-	s.loanerBibs = retVal
-	return nil
-}
-
-func rowToRaceEntry(row []string) (RaceEntry, error) {
-
-	var e RaceEntry
-
-	numStructFields := reflect.ValueOf(e).NumField()
-	if len(row) != numStructFields {
-		return RaceEntry{}, fmt.Errorf("number of field mis-match, %d != %d", len(row), numStructFields)
-	}
-
-	raceEntryReflection := reflect.ValueOf(&e).Elem()
-
-	for i := range row {
-		f := raceEntryReflection.Field(i)
-		if !f.CanSet() {
-			return RaceEntry{}, fmt.Errorf("could not set field")
-		} else {
-			f.SetString(row[i])
-		}
-	}
-	return e, nil
-}
-
-func RaceEntryToRow(e RaceEntry) []string {
-	numStructFields := reflect.ValueOf(e).NumField()
-	raceEntryReflection := reflect.ValueOf(&e).Elem()
-
-	cells := make([]string, numStructFields)
-	for i := 0; i < numStructFields; i++ {
-		f := raceEntryReflection.Field(i)
-		cells[i] = f.String()
-	}
-
-	return cells
-}
-
-const skipLines = 2
-
-func (s *BibSolver) loadRaceFile(path string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-
-	csvReader := csv.NewReader(f)
-
-	day := RaceDay{
-		Path: path,
-	}
-
-	// Skip lines
-	for i := 0; i < skipLines; i++ {
-		line, err := csvReader.Read()
-		if err != nil {
-			return err
-		}
-		csvReader.FieldsPerRecord = 0
-		day.HeaderLines = append(day.HeaderLines, line)
-	}
-
-	records, err := csvReader.ReadAll()
-	if err != nil {
-		return err
-	}
-
-	for _, record := range records {
-		entry, err := rowToRaceEntry(record)
-		if err != nil {
-			return err
-		}
-
-		day.Entries = append(day.Entries, &entry)
-	}
-
-	s.days = append(s.days, &day)
-	return nil
-}
-
-type RaceDay struct {
-	Entries     []*RaceEntry
-	Path        string
-	HeaderLines [][]string
-}
-
-func (d *RaceDay) OutputPath() string {
-	name := filepath.Base(d.Path)
-	nameWOExt := strings.TrimSuffix(name, filepath.Ext(name))
-	return filepath.Join(filepath.Dir(d.Path), fmt.Sprintf("processed - %s.csv", nameWOExt))
-}
-
-func (d *RaceDay) WriteDay() error {
-	file, err := os.OpenFile(d.OutputPath(), os.O_CREATE|os.O_RDWR, os.ModePerm)
-	defer file.Close()
-	if err != nil {
-		return err
-	}
-	writer := csv.NewWriter(file)
-
-	// Write header lines
-	err = writer.WriteAll(d.HeaderLines)
-	if err != nil {
-		return err
-	}
-
-	for _, entry := range d.Entries {
-		err := writer.Write(RaceEntryToRow(*entry))
-		if err != nil {
-			return err
-		}
-	}
-
-	writer.Flush()
-	return nil
-}
-
-func NewBibSolver() *BibSolver {
-	return &BibSolver{
-		bibOverrideCache: map[string]string{},
-		UsedBibs:         map[string]interface{}{},
-	}
-}
-
-type BibSolver struct {
-	loanerBibs       []string
-	loanerBibIndex   int
-	bibOverrideCache map[string]string
-
-	UsedBibs map[string]interface{}
-	days     []*RaceDay
-}
-
-func (s *BibSolver) IsBibUsed(bib string) bool {
-	_, ok := s.UsedBibs[bib]
-	return ok
-}
-
-func (s *BibSolver) SetBibUsed(bib string) {
-	s.UsedBibs[bib] = true
-}
-
-func (s *BibSolver) NextLoanerBib() string {
-	if s.loanerBibIndex >= len(s.loanerBibs) {
-		panic("ran out of loaner bibs")
-	}
-
-	loaner := s.loanerBibs[s.loanerBibIndex]
-	s.loanerBibIndex++
-	return loaner
-}
-
-func (s *BibSolver) BibLogic() error {
-
-	// Use all home bibs
-	for _, day := range s.days {
-		log.Printf("Home Bib Processing %s", filepath.Base(day.Path))
-
-		for _, entry := range day.Entries {
-			if entry.HomeBib() != "" {
-				s.SetBibUsed(entry.HomeBib())
-				log.Printf("\t%s: Home bib allocated %s", entry.LogName(), entry.HomeBib())
-			}
-		}
-	}
-
-	// Use away bibs or loaner, check for interference
-	for _, day := range s.days {
-		log.Printf("Second Pass Processing %s", filepath.Base(day.Path))
-		for _, entry := range day.Entries {
-			if entry.HomeBib() == "" {
-				// Home Bib is not defined
-
-				// Check if we already assigned this person a bib
-				existingOverride := s.bibOverrideCache[entry.PersonKey()]
-				if existingOverride != "" {
-					log.Printf("\t%s: Using existing overide %s", entry.LogName(), existingOverride)
-					entry.SetBib(existingOverride)
-				} else {
-					if entry.AwayBib() != "" {
-						// Away bib is defined
-						if s.IsBibUsed(entry.AwayBib()) {
-							// Can't use bib, someone else already has it, use loaner
-							loaner := s.NextLoanerBib()
-							s.SetBibUsed(loaner)
-							entry.SetBib(loaner)
-							s.bibOverrideCache[entry.PersonKey()] = loaner
-							log.Printf("\t%s: Away bib %s is used using loaner %s", entry.LogName(), entry.AwayBib(), loaner)
-						} else {
-							// Use away bib
-							entry.SetBib(entry.AwayBib())
-							s.SetBibUsed(entry.AwayBib())
-							s.bibOverrideCache[entry.PersonKey()] = entry.AwayBib()
-							log.Printf("\t%s: Using Away bib %s", entry.LogName(), entry.AwayBib())
-						}
-					} else {
-						// No bib is defined - use loaner
-						loaner := s.NextLoanerBib()
-						s.SetBibUsed(loaner)
-						entry.SetBib(loaner)
-						s.bibOverrideCache[entry.PersonKey()] = loaner
-						log.Printf("\t%s: Doesn't have a bib, using loaner %s", entry.LogName(), loaner)
-					}
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-func (s *BibSolver) WriteOutput() error {
-	for _, day := range s.days {
-		err := day.WriteDay()
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func main() {
-	logFile, err := os.OpenFile("log.txt", os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
+	logFilePath := filepath.Join(options.OutputDirectory, fmt.Sprintf("run-log-%s.txt", time.Now().Format("06-01-02-15:04:05")))
+	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
 	if err != nil {
 		panic(err)
 	}
-	mw := io.MultiWriter(os.Stdout, logFile)
+
+	logBuffer := bytes.Buffer{}
+
+	mw := io.MultiWriter(os.Stdout, logFile, &logBuffer)
 	log.SetOutput(mw)
 
+	resultsWindow := app.NewWindow("Results")
+
+	textBody := widget.NewLabel("Run Log")
+	windowBody := container.NewBorder(container.NewHBox(widget.NewLabel("Run Log"), layout.NewSpacer(), widget.NewButton("Open output directory", func() {
+		oPath, err := url.Parse(fmt.Sprintf("file://%s", options.OutputDirectory))
+		if err != nil || oPath == nil {
+			log.Printf("err %v", err)
+			return
+		}
+		_ = app.OpenURL(oPath)
+	})), nil, nil, nil,
+		container.NewPadded(container.NewVScroll(textBody)))
+
+	resultsWindow.SetContent(windowBody)
+	resultsWindow.Show()
+
+	running := true
+	defer func() {
+		running = false
+	}()
+
+	go func() {
+		for running {
+			textBody.SetText(logBuffer.String())
+			time.Sleep(time.Millisecond * 100)
+		}
+		textBody.SetText(logBuffer.String())
+	}()
+
 	solver := NewBibSolver()
-	err = solver.loadLoanerBibs()
+	err = solver.loadLoanerBibs(options.LoanerBibFilePath)
 	if err != nil {
-		panic(err)
+		log.Printf("error loading loaner bib file: %v", err)
+		nativeDialog.Message("error loading loaner bib file: %v", err).Title("Error loading loaner bib file").Error()
+		return
 	}
 
-	races := []string{"SG Race File 1-30-22.csv", "GS Race File West 1-30-22.csv", "SL Race File West 1-30-22.csv"}
-	for _, race := range races {
+	for _, race := range options.RaceDayFilePaths {
 		err = solver.loadRaceFile(race)
 		if err != nil {
-			panic(err)
+			log.Printf("error loading race file: %v", err)
+			nativeDialog.Message("error loading race file: %v", err).Title("Error loading race file").Error()
+			return
 		}
 	}
 
 	err = solver.BibLogic()
 	if err != nil {
-		panic(err)
+		log.Printf("error running bib logic: %v", err)
+		nativeDialog.Message("error running bib logic: %v", err).Title("Error running bib logic").Error()
+		return
 	}
 
-	err = solver.WriteOutput()
+	err = solver.WriteOutput(options.OutputDirectory)
 	if err != nil {
-		panic(err)
+		log.Printf("error writing output: %v", err)
+		nativeDialog.Message("error writing output: %v", err).Title("Error writing output").Error()
+		return
 	}
 
 	log.Println("done")
+
+}
+
+func main() {
+
+	myApp := app.New()
+	myWindow := myApp.NewWindow("Mid-Atlantic Masters Race Bib Assigner")
+
+	homeBib := "Mid-Atlantic"
+	homeOrgRadio := widget.NewRadioGroup([]string{"Mid-Atlantic", "New England"}, func(value string) {
+		homeBib = value
+	})
+
+	homeOrgRadio.Horizontal = true
+	homeOrgRadio.SetSelected(homeBib)
+
+	bibEntry := widget.NewEntry()
+	bibEntry.SetPlaceHolder("No file selected")
+	loanerBibSelection := container.NewBorder(nil, nil, nil, widget.NewButton("Browse",
+		func() {
+			load, err := nativeDialog.File().Filter("Bib CSV File", "csv").Title("Select Extra Bib CSV").Load()
+			if err != nil {
+				return
+			}
+
+			bibEntry.SetText(load)
+		}),
+		bibEntry,
+	)
+
+	raceDaySelections := []string{}
+
+	raceDayList := container.NewVBox()
+
+	var updateRaceDays func()
+	updateRaceDays = func() {
+		raceDayList.Hide()
+		raceDayList.Objects = nil
+
+		for i, selection := range raceDaySelections {
+			raceDayLabel := widget.NewLabel(strings.TrimSuffix(filepath.Base(selection), filepath.Ext(selection)))
+
+			// Copy var b/c it will change on next loop
+			index := i
+			raceDay := container.NewBorder(nil, nil, nil, widget.NewButton("X", func() {
+				// Delete day and re-update
+				raceDaySelections = append(raceDaySelections[:index], raceDaySelections[index+1:]...)
+				updateRaceDays()
+
+			}), raceDayLabel)
+
+			raceDayList.Add(raceDay)
+		}
+
+		raceDayList.Show()
+		raceDayList.Refresh()
+	}
+
+	updateRaceDays()
+
+	raceDaySelection := container.NewVBox(raceDayList, widget.NewButton("Add New Race Day", func() {
+		load, err := nativeDialog.File().Filter("Race CSV File", "csv").Title("Select Race CSV File").Load()
+		if err != nil {
+			return
+		}
+
+		raceDaySelections = append(raceDaySelections, load)
+		updateRaceDays()
+	}))
+
+	outputDirectoryEntry := widget.NewEntry()
+	outputDirectoryChooser := container.NewBorder(nil, nil, nil, widget.NewButton("Choose", func() {
+		browse, err := nativeDialog.Directory().Title("Output directory").Browse()
+		if err != nil {
+			return
+		}
+
+		outputDirectoryEntry.SetText(browse)
+	}), outputDirectoryEntry)
+
+	mainForm := container.New(layout.NewFormLayout(),
+		widget.NewLabel("Home Org"), homeOrgRadio,
+		widget.NewLabel("Loaner Bib File"), loanerBibSelection,
+		widget.NewLabel("Race Days"), raceDaySelection,
+		widget.NewLabel("Output Directory"), outputDirectoryChooser,
+	)
+
+	content := container.New(layout.NewVBoxLayout(),
+		widget.NewLabel("Mid-Atlantic Masters Race Bib Assigner"),
+		mainForm,
+		widget.NewButton("Run", func() {
+			run(myApp, runOptions{
+				IsNEMS:            homeOrgRadio.Selected == "New England",
+				LoanerBibFilePath: bibEntry.Text,
+				RaceDayFilePaths:  raceDaySelections,
+				OutputDirectory:   outputDirectoryEntry.Text,
+			})
+		}),
+	)
+
+	myWindow.SetContent(content)
+
+	myWindow.Show()
+	myApp.Run()
+	tidyUp()
+
 }
