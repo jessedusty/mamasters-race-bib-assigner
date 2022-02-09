@@ -1,10 +1,10 @@
-name: Go
-
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    # Sequence of patterns matched against refs/tags
+    tags:
+      - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
+
+name: Create Release
 
 jobs:
 
@@ -24,5 +24,22 @@ jobs:
     - name: Install deps
       run: go mod download
       
+    - name: Get fyne-cross
+      run: go get github.com/fyne-io/fyne-cross 
+      
     - name: Cross Compile Windows
-      run: go get github.com/fyne-io/fyne-cross && go run github.com/fyne-io/fyne-cross windows -arch=amd64,386
+      run: go run github.com/fyne-io/fyne-cross windows -arch=amd64,386
+      
+    - name: Cross Compile Mac
+      run: go run github.com/fyne-io/fyne-cross darwin -arch=*
+      
+    - name: Cross Compile Linux
+      run: go run github.com/fyne-io/fyne-cross darwin -arch=*
+
+    - uses: "marvinpinto/action-automatic-releases@latest"
+      with:
+        repo_token: "${{ secrets.GITHUB_TOKEN }}"
+        draft: true
+        files: |
+          LICENSE.txt
+          **/*.zip
