@@ -1,0 +1,28 @@
+name: Go
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.17
+
+    - name: setup-docker
+      uses: docker-practice/actions-setup-docker@1.0.8
+      
+    - uses: actions/checkout@v2
+
+    - name: Install deps
+      run: go mod download
+      
+    - name: Cross Compile Windows
+      run: go run github.com/fyne-io/fyne-cross windows -arch=amd64,386
