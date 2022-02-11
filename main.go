@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -34,6 +35,8 @@ func run(app fyne.App, options runOptions) {
 
 	logFilePath := filepath.Join(options.OutputDirectory, fmt.Sprintf("run-log-%s.txt", time.Now().Format("06-01-02-15_04_05")))
 	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
+	defer logFile.Close()
+
 	if err != nil {
 		log.Printf("error opening log file: %v", err)
 		nativeDialog.Message("error opening log file: %v", err).Title("Error opening log file").Error()
@@ -42,8 +45,13 @@ func run(app fyne.App, options runOptions) {
 
 	logBuffer := bytes.Buffer{}
 
-	mw := io.MultiWriter(os.Stdout, logFile, &logBuffer)
-	log.SetOutput(mw)
+	if runtime.GOOS == "windows" {
+		mw := io.MultiWriter(logFile, &logBuffer)
+		log.SetOutput(mw)
+	} else {
+		mw := io.MultiWriter(os.Stdout, logFile, &logBuffer)
+		log.SetOutput(mw)
+	}
 
 	resultsWindow := app.NewWindow("Results")
 
