@@ -47,7 +47,7 @@ func run(app fyne.App, options runOptions) {
 
 	textBody := widget.NewLabel("Run Log")
 	windowBody := container.NewBorder(container.NewHBox(widget.NewLabel("Run Log"), layout.NewSpacer(), widget.NewButton("Open output directory", func() {
-		oPath, err := url.Parse(fmt.Sprintf("file://%s", options.OutputDirectory))
+		oPath, err := url.Parse(fmt.Sprintf("file://%s", strings.ReplaceAll(options.OutputDirectory, "\\", "/")))
 		if err != nil || oPath == nil {
 			log.Printf("err %v", err)
 			return
