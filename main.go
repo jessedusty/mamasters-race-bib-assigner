@@ -32,10 +32,12 @@ type runOptions struct {
 func run(app fyne.App, options runOptions) {
 	NemsMode = options.IsNEMS
 
-	logFilePath := filepath.Join(options.OutputDirectory, fmt.Sprintf("run-log-%s.txt", time.Now().Format("06-01-02-15:04:05")))
+	logFilePath := filepath.Join(options.OutputDirectory, fmt.Sprintf("run-log-%s.txt", time.Now().Format("06-01-02-15_04_05")))
 	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
 	if err != nil {
-		panic(err)
+		log.Printf("error opening log file: %v", err)
+		nativeDialog.Message("error opening log file: %v", err).Title("Error opening log file").Error()
+		return
 	}
 
 	logBuffer := bytes.Buffer{}
