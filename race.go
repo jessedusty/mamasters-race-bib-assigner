@@ -93,8 +93,8 @@ func rowToRaceEntry(row []string) (RaceEntry, error) {
 	var e RaceEntry
 
 	numStructFields := reflect.ValueOf(e).NumField()
-	if len(row) > numStructFields {
-		return RaceEntry{}, fmt.Errorf("number of field mis-match, %d < %d", len(row), numStructFields)
+	if len(row) < numStructFields-1 {
+		return RaceEntry{}, fmt.Errorf("number of field mis-match, %d < %d", len(row), numStructFields-1)
 	}
 
 	raceEntryReflection := reflect.ValueOf(&e).Elem()
