@@ -195,7 +195,7 @@ func main() {
 	}), outputDirectoryEntry)
 
 	mainForm := container.New(layout.NewFormLayout(),
-		widget.NewLabel("Home Org"), homeOrgRadio,
+		//widget.NewLabel("Home Org"), homeOrgRadio,
 		widget.NewLabel("Loaner Bib File"), loanerBibSelection,
 		widget.NewLabel("Race Days"), raceDaySelection,
 		widget.NewLabel("Output Directory"), outputDirectoryChooser,

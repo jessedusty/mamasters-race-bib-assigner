@@ -19,48 +19,39 @@ type LoanerBib struct {
 var NemsMode = false
 
 type RaceEntry struct {
-	NEMSBibNumber    string
-	MIDBibNumber     string
-	USSA             string
-	FIS              string
+	MainBib          string
 	FirstName        string
 	LastName         string
 	YOB              string
 	Gender           string
+	USSA             string
+	FIS              string
+	NASTAR           string
 	Team             string
 	RegistrationDate string
 	USSAMembership   string
-	NASTAR           string
 	SeasonPass       string
+	RacerID          string
+	ParticipantID    string
+	EventID          string
 	ExtraCol         string
 }
 
 func (e *RaceEntry) HomeBib() string {
-	if NemsMode {
-		return cleanBib(e.NEMSBibNumber)
-	} else {
-		return cleanBib(e.MIDBibNumber)
-	}
+	return cleanBib(e.MainBib)
 }
 
 func (e *RaceEntry) AwayBib() string {
-	if NemsMode {
-		return cleanBib(e.MIDBibNumber)
-	} else {
-		return cleanBib(e.NEMSBibNumber)
-	}
+	return ""
 }
 
 func (e *RaceEntry) SetBib(bib string) {
-	if NemsMode {
-		e.NEMSBibNumber = cleanBib(bib)
-	} else {
-		e.MIDBibNumber = cleanBib(bib)
-	}
+	e.MainBib = cleanBib(bib)
 }
 
 func (e *RaceEntry) PersonKey() string {
-	return strings.Trim(e.USSA+e.FirstName+e.LastName+e.YOB, " ")
+	return e.RacerID
+	//return strings.Trim(e.USSA+e.FirstName+e.LastName+e.YOB, " ")
 }
 
 func (e *RaceEntry) LogName() string {
@@ -102,8 +93,8 @@ func rowToRaceEntry(row []string) (RaceEntry, error) {
 	var e RaceEntry
 
 	numStructFields := reflect.ValueOf(e).NumField()
-	if len(row) >= numStructFields-1 {
-		return RaceEntry{}, fmt.Errorf("number of field mis-match, %d < %d", len(row), numStructFields-1)
+	if len(row) > numStructFields {
+		return RaceEntry{}, fmt.Errorf("number of field mis-match, %d < %d", len(row), numStructFields)
 	}
 
 	raceEntryReflection := reflect.ValueOf(&e).Elem()
@@ -132,7 +123,7 @@ func RaceEntryToRow(e RaceEntry) []string {
 	return cells
 }
 
-const skipLines = 2
+const skipLines = 1
 
 func (s *BibSolver) loadRaceFile(path string) error {
 	f, err := os.Open(path)
